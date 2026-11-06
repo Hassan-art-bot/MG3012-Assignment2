@@ -2,7 +2,8 @@
 
 A mini decentralized application: a Solidity smart contract on the **Sepolia testnet** plus a single-page HTML/CSS/JS frontend that talks to it through **MetaMask** and **ethers.js**.
 
-- **Student:** YOUR NAME - YOUR ROLL NO
+- **Student:** Hassan sajid(24i-5556)
+- 
 - **Course:** MG3012 Blockchain Technology for Business (BSFT, 5th Semester)
 - **Contract address (Sepolia):** `0x40e72F9ad883f0fa9f56f673E384509A3e9f12B9`
 - **Etherscan:** https://sepolia.etherscan.io/address/0x40e72F9ad883f0fa9f56f673E384509A3e9f12B9
