@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Campus Notice Board dApp</title>
+  <link rel="stylesheet" href="style.css">
+  <!-- ethers.js v6 -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.umd.min.js"></script>
+</head>
+<body>
+<div class="container">
+
+  <header>
+    <!-- Image (inline SVG so no external file is needed) -->
+    <img alt="Notice board logo" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%230ea5e9'/><rect x='20' y='22' width='60' height='46' rx='6' fill='white'/><rect x='28' y='32' width='44' height='5' fill='%230ea5e9'/><rect x='28' y='43' width='36' height='5' fill='%230ea5e9'/><rect x='28' y='54' width='26' height='5' fill='%230ea5e9'/><rect x='44' y='72' width='12' height='10' fill='white'/></svg>">
+    <h1>Campus Notice Board dApp</h1>
+    <p>A mini decentralized app on the <strong>Sepolia testnet</strong> - MG3012 Assignment 2</p>
+  </header>
+
+  <h2>How it works</h2>
+  <ul>
+    <li>Connect your MetaMask wallet (Sepolia network).</li>
+    <li>Post a notice - this is a <em>write</em> transaction.</li>
+    <li>Read and like notices - reads are free, likes are transactions.</li>
+  </ul>
+  <p>Need test ETH? Get it from a <a href="https://sepoliafaucet.com" target="_blank">Sepolia faucet</a>.</p>
+
+  <h2>1. Wallet</h2>
+  <button id="connectBtn">Connect MetaMask</button>
+  <p>Account: <span id="account">not connected</span></p>
+  <p>Contract: <span id="contractAddr" class="small"></span></p>
+
+  <h2>2. Post a notice (write)</h2>
+  <textarea id="noticeText" rows="3" maxlength="280" placeholder="Write your notice (max 280 chars)"></textarea>
+  <button id="postBtn" disabled>Post Notice</button>
+
+  <h2>3. Read notices (read)</h2>
+  <button id="countBtn" disabled>Get Notice Count</button>
+  <button id="latestBtn" disabled>Get Latest Notice</button>
+  <button id="allBtn" disabled>Load All Notices</button>
+  <p>Total notices: <strong id="count">-</strong></p>
+  <div id="notices"></div>
+
+  <h2>Transaction status</h2>
+  <div class="status" id="status">Waiting for action...</div>
+
+  <footer>Built with HTML, CSS, JavaScript and ethers.js</footer>
+</div>
+
+<script>
+// ====== PASTE YOUR DEPLOYED CONTRACT ADDRESS HERE ======
+const CONTRACT_ADDRESS = "0x40e72F9ad883f0fa9f56f673E384509A3e9f12B9";
+// =======================================================
+
+const SEPOLIA_CHAIN_ID = 11155111n;
+
+// ABI = the "menu" that tells ethers.js which functions the contract has
+const ABI = [
+  "function postNotice(string _text)",
+  "function likeNotice(uint256 _id)",
+  "function getNoticeCount() view returns (uint256)",
+  "function getNotice(uint256 _id) view returns (address author, string text, uint256 likes, uint256 timestamp)",
+  "function getLatestNotice() view returns (address author, string text, uint256 likes, uint256 timestamp)"
+];
+
+let provider, signer, contract;
+const $ = (id) => document.getElementById(id);
+const setStatus = (msg) => { $("status").innerHTML = msg; };
+const short = (a) => a.slice(0, 6) + "..." + a.slice(-4);
+
+async function connect() {
+  if (!window.ethereum) { setStatus("MetaMask not found. Please install it."); return; }
+  try {
+    provider = new ethers.BrowserProvider(window.ethereum);
+    await provider.send("eth_requestAccounts", []);
+    const network = await provider.getNetwork();
+    if (network.chainId !== SEPOLIA_CHAIN_ID) {
+      try {
+        await window.ethereum.request({ method: "wallet_switchEthereumChain", params: [{ chainId: "0xaa36a7" }] });
+        provider = new ethers.BrowserProvider(window.ethereum);
+      } catch (e) { setStatus("Please switch MetaMask to the Sepolia network."); return; }
+    }
+    signer = await provider.getSigner();
+    contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
+    $("account").textContent = await signer.getAddress();
+    $("contractAddr").textContent = CONTRACT_ADDRESS;
+    ["postBtn", "countBtn", "latestBtn", "allBtn"].forEach(id => $(id).disabled = false);
+    $("connectBtn").textContent = "Connected";
+    setStatus("Wallet connected to Sepolia.");
+  } catch (err) { setStatus("Connection failed: " + (err.shortMessage || err.message)); }
+}
+
+async function postNotice() {
+  const text = $("noticeText").value.trim();
+  if (!text) { setStatus("Please type a notice first."); return; }
+  try {
+    setStatus("Waiting for MetaMask confirmation...");
+    const tx = await contract.postNotice(text);
+    setStatus("Transaction sent. Hash: " + tx.hash + "<br>Waiting for confirmation...");
+    const receipt = await tx.wait();
+    setStatus("Confirmed in block " + receipt.blockNumber + "<br>Tx hash: " +
+      '<a target="_blank" href="https://sepolia.etherscan.io/tx/' + tx.hash + '">' + tx.hash + "</a>");
+    $("noticeText").value = "";
+    getCount();
+  } catch (err) { setStatus("Transaction failed: " + (err.shortMessage || err.message)); }
+}
+
+async function getCount() {
+  try {
+    const n = await contract.getNoticeCount();
+    $("count").textContent = n.toString();
+    return Number(n);
+  } catch (err) { setStatus("Read failed: " + (err.shortMessage || err.message)); return 0; }
+}
+
+function renderNotice(id, n) {
+  const date = new Date(Number(n.timestamp) * 1000).toLocaleString();
+  const div = document.createElement("div");
+  div.className = "notice";
+  div.innerHTML = "<strong>#" + id + "</strong> " + escapeHtml(n.text) +
+    '<p class="small">By ' + short(n.author) + " | " + date + " | Likes: " + n.likes + "</p>";
+  const btn = document.createElement("button");
+  btn.textContent = "Like";
+  btn.onclick = () => likeNotice(id);
+  div.appendChild(btn);
+  $("notices").appendChild(div);
+}
+
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+async function getLatest() {
+  try {
+    const count = await getCount();
+    if (count === 0) { setStatus("No notices yet."); return; }
+    const n = await contract.getLatestNotice();
+    $("notices").innerHTML = "";
+    renderNotice(count - 1, n);
+    setStatus("Loaded latest notice.");
+  } catch (err) { setStatus("Read failed: " + (err.shortMessage || err.message)); }
+}
+
+async function loadAll() {
+  try {
+    const count = await getCount();
+    $("notices").innerHTML = "";
+    for (let i = count - 1; i >= 0; i--) renderNotice(i, await contract.getNotice(i));
+    setStatus("Loaded " + count + " notice(s).");
+  } catch (err) { setStatus("Read failed: " + (err.shortMessage || err.message)); }
+}
+
+async function likeNotice(id) {
+  try {
+    setStatus("Confirm the like in MetaMask...");
+    const tx = await contract.likeNotice(id);
+    setStatus("Like sent. Hash: " + tx.hash);
+    await tx.wait();
+    setStatus("Liked notice #" + id + " (tx confirmed).");
+    loadAll();
+  } catch (err) { setStatus("Like failed: " + (err.shortMessage || err.message)); }
+}
+
+$("connectBtn").addEventListener("click", connect);
+$("postBtn").addEventListener("click", postNotice);
+$("countBtn").addEventListener("click", getCount);
+$("latestBtn").addEventListener("click", getLatest);
+$("allBtn").addEventListener("click", loadAll);
+</script>
+</body>
+</html>
